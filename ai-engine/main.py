@@ -1268,5 +1268,4 @@ def update_incident_status(
 
         "new_status":
             status_update.status
-
     }
