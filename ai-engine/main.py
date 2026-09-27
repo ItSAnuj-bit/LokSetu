@@ -1,10 +1,13 @@
 from fastapi import FastAPI, HTTPException, UploadFile, File, Form
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from pymongo import MongoClient
 from bson import ObjectId
 from datetime import datetime
 from google import genai
 import os
+from dotenv import load_dotenv
+load_dotenv()
 import shutil
 import json
 
@@ -13,6 +16,22 @@ app = FastAPI(
     title="LokSetu AI Incident Engine",
     description="AI engine for analyzing citizen complaints",
     version="3.1.0"
+)
+
+
+# -----------------------------
+# CORS
+# -----------------------------
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "http://localhost:5173",
+        "http://127.0.0.1:5173"
+    ],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 
