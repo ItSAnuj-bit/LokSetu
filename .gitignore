@@ -1,0 +1,20 @@
+# Environment secrets
+.env
+**/.env
+
+# Python
+.venv/
+**/.venv/
+__pycache__/
+*.pyc
+
+# Node
+node_modules/
+**/node_modules/
+
+# Build output
+dist/
+**/dist/
+
+# Logs
+*.log
