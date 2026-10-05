@@ -1,20 +1,46 @@
 import {
   Bell,
   ChevronDown,
+  LogIn,
+  LogOut,
   Menu,
   X,
 } from "lucide-react";
+
 import { useState } from "react";
 
 function Navbar({
   page,
   onNavigate,
+  user,
+  onLogin,
+  onLogout,
 }) {
-  const [mobileOpen, setMobileOpen] = useState(false);
+  const [mobileOpen, setMobileOpen] =
+    useState(false);
+
+  const [profileOpen, setProfileOpen] =
+    useState(false);
 
   const navigate = (target) => {
     setMobileOpen(false);
+    setProfileOpen(false);
+
     onNavigate(target);
+  };
+
+  const handleLogin = () => {
+    setMobileOpen(false);
+    setProfileOpen(false);
+
+    onLogin();
+  };
+
+  const handleLogout = () => {
+    setMobileOpen(false);
+    setProfileOpen(false);
+
+    onLogout();
   };
 
   const navItems = [
@@ -40,10 +66,21 @@ function Navbar({
     },
   ];
 
+  const displayName =
+    user?.name ||
+    user?.full_name ||
+    user?.email?.split("@")[0] ||
+    "Resident";
+
+  const avatarLetter =
+    displayName.charAt(0).toUpperCase();
+
   return (
     <header className="global-navbar">
       <div className="global-navbar-inner">
+        {/* BRAND */}
         <button
+          type="button"
           className="global-brand"
           onClick={() => navigate("home")}
           aria-label="Go to home"
@@ -59,9 +96,11 @@ function Navbar({
           </span>
         </button>
 
+        {/* DESKTOP NAVIGATION */}
         <nav className="global-nav">
           {navItems.map((item) => (
             <button
+              type="button"
               key={item.id}
               className={
                 page === item.id
@@ -75,40 +114,122 @@ function Navbar({
           ))}
         </nav>
 
+        {/* DESKTOP ACTIONS */}
         <div className="global-actions">
           <span className="global-ward">
             Ward 7
           </span>
 
-          <button
-            className="global-icon-button"
-            aria-label="Notifications"
-          >
-            <Bell size={18} />
-          </button>
+          {user ? (
+            <>
+              <button
+                type="button"
+                className="global-icon-button"
+                aria-label="Notifications"
+                onClick={() =>
+                  window.alert(
+                    "Notifications will be connected to LokSetu shortly."
+                  )
+                }
+              >
+                <Bell size={18} />
+              </button>
 
-          <button className="global-profile">
-            <span className="global-avatar">
-              A
-            </span>
+              <div className="global-profile-wrapper">
+                <button
+                  type="button"
+                  className="global-profile"
+                  onClick={() =>
+                    setProfileOpen(
+                      (current) => !current
+                    )
+                  }
+                  aria-expanded={profileOpen}
+                  aria-label="Open profile menu"
+                >
+                  <span className="global-avatar">
+                    {avatarLetter}
+                  </span>
 
-            <span className="global-profile-name">
-              Resident
-            </span>
+                  <span className="global-profile-name">
+                    {displayName}
+                  </span>
 
-            <ChevronDown
-              size={14}
-              className="global-profile-chevron"
-            />
-          </button>
+                  <ChevronDown
+                    size={14}
+                    className={
+                      profileOpen
+                        ? "global-profile-chevron open"
+                        : "global-profile-chevron"
+                    }
+                  />
+                </button>
+
+                {profileOpen && (
+                  <div className="global-profile-menu">
+                    <div className="global-profile-menu-header">
+                      <span className="global-avatar large">
+                        {avatarLetter}
+                      </span>
+
+                      <div>
+                        <strong>
+                          {displayName}
+                        </strong>
+
+                        <span>
+                          {user.email}
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="global-profile-divider" />
+
+                    <button
+                      type="button"
+                      className="global-profile-menu-item"
+                      onClick={() =>
+                        navigate("home")
+                      }
+                    >
+                      <span>My account</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      className="global-profile-menu-item logout"
+                      onClick={handleLogout}
+                    >
+                      <LogOut size={16} />
+                      <span>Sign out</span>
+                    </button>
+                  </div>
+                )}
+              </div>
+            </>
+          ) : (
+            <button
+              type="button"
+              className="global-login-button"
+              onClick={handleLogin}
+            >
+              <LogIn size={16} />
+              Sign in
+            </button>
+          )}
         </div>
 
+        {/* MOBILE MENU BUTTON */}
         <button
+          type="button"
           className="global-mobile-button"
           onClick={() =>
-            setMobileOpen((current) => !current)
+            setMobileOpen(
+              (current) => !current
+            )
           }
           aria-label="Toggle navigation"
+          aria-expanded={mobileOpen}
         >
           {mobileOpen ? (
             <X size={21} />
@@ -118,10 +239,12 @@ function Navbar({
         </button>
       </div>
 
+      {/* MOBILE MENU */}
       {mobileOpen && (
         <div className="global-mobile-menu">
           {navItems.map((item) => (
             <button
+              type="button"
               key={item.id}
               className={
                 page === item.id
@@ -136,8 +259,48 @@ function Navbar({
 
           <div className="global-mobile-area">
             <span>Current area</span>
-            <strong>Ward 7, Safidon</strong>
+            <strong>
+              Ward 7, Safidon
+            </strong>
           </div>
+
+          {user ? (
+            <div className="global-mobile-user">
+              <div className="global-mobile-user-info">
+                <span className="global-avatar">
+                  {avatarLetter}
+                </span>
+
+                <div>
+                  <strong>
+                    {displayName}
+                  </strong>
+
+                  <span>
+                    {user.email}
+                  </span>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                className="global-mobile-logout"
+                onClick={handleLogout}
+              >
+                <LogOut size={16} />
+                Sign out
+              </button>
+            </div>
+          ) : (
+            <button
+              type="button"
+              className="global-mobile-login"
+              onClick={handleLogin}
+            >
+              <LogIn size={16} />
+              Sign in
+            </button>
+          )}
         </div>
       )}
     </header>
