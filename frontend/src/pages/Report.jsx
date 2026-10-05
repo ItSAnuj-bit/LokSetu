@@ -24,17 +24,43 @@ import {
   useMapEvents,
 } from "react-leaflet";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+
+import { apiRequest } from "../api";
 
 const DEFAULT_LOCATION = [29.405, 76.67];
 
 const categories = [
-  { name: "Roads", description: "Potholes & damage", icon: Navigation },
-  { name: "Water", description: "Supply & leakage", icon: Droplets },
-  { name: "Electricity", description: "Power problems", icon: Zap },
-  { name: "Streetlight", description: "Lights & poles", icon: Lightbulb },
-  { name: "Waste", description: "Garbage & sanitation", icon: Trash2 },
-  { name: "Other", description: "Something else", icon: FileText },
+  {
+    name: "Roads",
+    description: "Potholes & damage",
+    icon: Navigation,
+  },
+  {
+    name: "Water",
+    description: "Supply & leakage",
+    icon: Droplets,
+  },
+  {
+    name: "Electricity",
+    description: "Power problems",
+    icon: Zap,
+  },
+  {
+    name: "Streetlight",
+    description: "Lights & poles",
+    icon: Lightbulb,
+  },
+  {
+    name: "Waste",
+    description: "Garbage & sanitation",
+    icon: Trash2,
+  },
+  {
+    name: "Other",
+    description: "Something else",
+    icon: FileText,
+  },
 ];
 
 function MapClickHandler({ onSelect }) {
@@ -88,6 +114,224 @@ function Report({
   const [locationError, setLocationError] =
     useState("");
 
+  const [submitLoading, setSubmitLoading] =
+    useState(false);
+
+  const [submitError, setSubmitError] =
+    useState("");
+
+  // Evidence
+  const [photoFiles, setPhotoFiles] = useState([]);
+  const [otherFiles, setOtherFiles] = useState([]);
+  const [voiceBlob, setVoiceBlob] = useState(null);
+  const [voiceUrl, setVoiceUrl] = useState("");
+  const [isRecording, setIsRecording] = useState(false);
+  const [recordingTime, setRecordingTime] = useState(0);
+
+  const photoInputRef = useRef(null);
+  const fileInputRef = useRef(null);
+  const mediaRecorderRef = useRef(null);
+  const mediaChunksRef = useRef([]);
+  const recordingTimerRef = useRef(null);
+
+  const handlePhotoChange = (event) => {
+    const files = Array.from(
+      event.target.files || []
+    );
+
+    if (files.length === 0) {
+      return;
+    }
+
+    setPhotoFiles((current) => [
+      ...current,
+      ...files,
+    ]);
+
+    event.target.value = "";
+  };
+
+  const handleFileChange = (event) => {
+    const files = Array.from(
+      event.target.files || []
+    );
+
+    if (files.length === 0) {
+      return;
+    }
+
+    setOtherFiles((current) => [
+      ...current,
+      ...files,
+    ]);
+
+    event.target.value = "";
+  };
+
+  const removePhoto = (index) => {
+    setPhotoFiles((current) =>
+      current.filter(
+        (_, fileIndex) => fileIndex !== index
+      )
+    );
+  };
+
+  const removeFile = (index) => {
+    setOtherFiles((current) =>
+      current.filter(
+        (_, fileIndex) => fileIndex !== index
+      )
+    );
+  };
+  const stopRecording = () => {
+    const recorder = mediaRecorderRef.current;
+
+    if (recorder && recorder.state !== "inactive") {
+      recorder.stop();
+    }
+
+    if (recordingTimerRef.current) {
+      clearInterval(recordingTimerRef.current);
+      recordingTimerRef.current = null;
+    }
+
+    setIsRecording(false);
+  };
+
+  const startRecording = async () => {
+    if (!navigator.mediaDevices?.getUserMedia) {
+      setSubmitError(
+        "Voice recording is not supported by this browser."
+      );
+      return;
+    }
+
+    if (isRecording) {
+      stopRecording();
+      return;
+    }
+
+    try {
+      setSubmitError("");
+
+      const stream =
+        await navigator.mediaDevices.getUserMedia({
+          audio: true,
+        });
+
+      const recorder = new MediaRecorder(stream);
+
+      mediaRecorderRef.current = recorder;
+      mediaChunksRef.current = [];
+
+      recorder.ondataavailable = (event) => {
+        if (event.data.size > 0) {
+          mediaChunksRef.current.push(event.data);
+        }
+      };
+
+      recorder.onstop = () => {
+        const blob = new Blob(
+          mediaChunksRef.current,
+          {
+            type:
+              recorder.mimeType || "audio/webm",
+          }
+        );
+
+        const url = URL.createObjectURL(blob);
+
+        setVoiceBlob(blob);
+        setVoiceUrl(url);
+
+        stream
+          .getTracks()
+          .forEach((track) => track.stop());
+      };
+
+      recorder.start();
+
+      setIsRecording(true);
+      setRecordingTime(0);
+
+      recordingTimerRef.current =
+        window.setInterval(() => {
+          setRecordingTime(
+            (current) => current + 1
+          );
+        }, 1000);
+    } catch (error) {
+      console.error(
+        "Voice recording failed:",
+        error
+      );
+
+      setSubmitError(
+        "Microphone permission was denied or the microphone is unavailable."
+      );
+
+      setIsRecording(false);
+    }
+  };
+
+  const removeVoiceNote = () => {
+    stopRecording();
+
+    if (voiceUrl) {
+      URL.revokeObjectURL(voiceUrl);
+    }
+
+    setVoiceBlob(null);
+    setVoiceUrl("");
+    setRecordingTime(0);
+  };
+
+  const formatFileSize = (size) => {
+    if (size < 1024) {
+      return `${size} B`;
+    }
+
+    if (size < 1024 * 1024) {
+      return `${(size / 1024).toFixed(1)} KB`;
+    }
+
+    return `${(size / (1024 * 1024)).toFixed(1)} MB`;
+  };
+
+  const formatRecordingTime = (seconds) => {
+    const minutes = Math.floor(seconds / 60);
+    const remainingSeconds = seconds % 60;
+
+    return `${String(minutes).padStart(
+      2,
+      "0"
+    )}:${String(remainingSeconds).padStart(
+      2,
+      "0"
+    )}`;
+  };
+
+  useEffect(() => {
+    return () => {
+      if (recordingTimerRef.current) {
+        clearInterval(recordingTimerRef.current);
+      }
+
+      const recorder = mediaRecorderRef.current;
+
+      if (
+        recorder &&
+        recorder.state !== "inactive"
+      ) {
+        recorder.stop();
+      }
+
+      if (voiceUrl) {
+        URL.revokeObjectURL(voiceUrl);
+      }
+    };
+  }, [voiceUrl]);
+
   const nextStep = () => {
     if (step < 3) {
       setStep(step + 1);
@@ -116,8 +360,7 @@ function Report({
 
     setLocationError("");
   };
-
-  const useCurrentLocation = () => {
+    const useCurrentLocation = () => {
     setLocationError("");
 
     if (!navigator.geolocation) {
@@ -131,8 +374,11 @@ function Report({
 
     navigator.geolocation.getCurrentPosition(
       (position) => {
-        const latitude = position.coords.latitude;
-        const longitude = position.coords.longitude;
+        const latitude =
+          position.coords.latitude;
+
+        const longitude =
+          position.coords.longitude;
 
         setCoordinates({
           latitude,
@@ -172,29 +418,182 @@ function Report({
     );
   };
 
-  const submitReport = () => {
-    const reportNumber = Math.floor(
-      10000 + Math.random() * 90000
+  const submitReport = async () => {
+  if (!category) {
+    setSubmitError(
+      "Please select a problem category."
     );
 
-    const reportId = `LS-2026-${reportNumber}`;
+    return;
+  }
+
+  setSubmitError("");
+  setSubmitLoading(true);
+
+  const title =
+    category === "Streetlight"
+      ? "Streetlight not working"
+      : category === "Water"
+      ? "Water supply issue"
+      : category === "Electricity"
+      ? "Electricity problem"
+      : category === "Waste"
+      ? "Waste collection issue"
+      : category === "Roads"
+      ? "Road problem"
+      : "Civic issue";
+
+  const complaintLocation = {
+    address:
+      location || "Ward 7, Safidon",
+
+    landmark:
+      landmark || null,
+
+    latitude:
+      coordinates?.latitude ?? null,
+
+    longitude:
+      coordinates?.longitude ?? null,
+  };
+
+  try {
+    // --------------------------------------------------------
+    // STEP 1: CREATE COMPLAINT
+    // --------------------------------------------------------
+
+    const response = await apiRequest(
+      "/complaints",
+      {
+        method: "POST",
+
+        body: JSON.stringify({
+          title,
+
+          description:
+            description ||
+            "No additional description provided.",
+
+          category:
+            category || "Other",
+
+          location:
+            complaintLocation,
+
+          priority: "medium",
+        }),
+      }
+    );
+
+    const complaintId =
+      response?.data?.complaint_id ||
+      response?.complaint_id;
+
+    if (!complaintId) {
+      throw new Error(
+        "Complaint was created, but no complaint ID was returned."
+      );
+    }
+
+    // --------------------------------------------------------
+    // STEP 2: UPLOAD PHOTO EVIDENCE
+    // --------------------------------------------------------
+
+    for (const photo of photoFiles) {
+      const formData = new FormData();
+
+      formData.append(
+        "evidence_type",
+        "photo"
+      );
+
+      formData.append(
+        "file",
+        photo
+      );
+
+      await apiRequest(
+        `/complaints/${complaintId}/evidence`,
+        {
+          method: "POST",
+          body: formData,
+        }
+      );
+    }
+
+    // --------------------------------------------------------
+    // STEP 3: UPLOAD OTHER FILES
+    // --------------------------------------------------------
+
+    for (const file of otherFiles) {
+      const formData = new FormData();
+
+      formData.append(
+        "evidence_type",
+        "file"
+      );
+
+      formData.append(
+        "file",
+        file
+      );
+
+      await apiRequest(
+        `/complaints/${complaintId}/evidence`,
+        {
+          method: "POST",
+          body: formData,
+        }
+      );
+    }
+
+    // --------------------------------------------------------
+    // STEP 4: UPLOAD VOICE NOTE
+    // --------------------------------------------------------
+
+    if (voiceBlob) {
+      const voiceFile = new File(
+        [voiceBlob],
+        `voice-note-${Date.now()}.webm`,
+        {
+          type:
+            voiceBlob.type ||
+            "audio/webm",
+        }
+      );
+
+      const formData = new FormData();
+
+      formData.append(
+        "evidence_type",
+        "voice"
+      );
+
+      formData.append(
+        "file",
+        voiceFile
+      );
+
+      await apiRequest(
+        `/complaints/${complaintId}/evidence`,
+        {
+          method: "POST",
+          body: formData,
+        }
+      );
+    }
+
+    // --------------------------------------------------------
+    // STEP 5: UPDATE LOCAL REPORT
+    // --------------------------------------------------------
 
     const newReport = {
-      id: reportId,
-      title:
-        category === "Streetlight"
-          ? "Streetlight not working"
-          : category === "Water"
-          ? "Water supply issue"
-          : category === "Electricity"
-          ? "Electricity problem"
-          : category === "Waste"
-          ? "Waste collection issue"
-          : category === "Roads"
-          ? "Road problem"
-          : "Civic issue",
+      id: complaintId,
 
-      category: category || "Other",
+      title,
+
+      category:
+        category || "Other",
 
       status: "Submitted",
 
@@ -216,10 +615,28 @@ function Report({
       onSubmitReport(newReport);
     }
 
-    setSubmittedReportId(reportId);
-    setSubmitted(true);
-  };
+    setSubmittedReportId(
+      complaintId
+    );
 
+    setSubmitted(true);
+
+  } catch (error) {
+    console.error(
+      "Complaint submission failed:",
+      error
+    );
+
+    setSubmitError(
+      error.message ||
+        "Unable to submit your report. Please try again."
+    );
+
+  } finally {
+    setSubmitLoading(false);
+  }
+};
+  
   if (submitted) {
     return (
       <div className="report-page">
@@ -238,13 +655,16 @@ function Report({
             </h1>
 
             <p>
-              Your issue has been recorded and will be
-              forwarded to the responsible department.
+              Your issue has been recorded and
+              will be forwarded to the responsible
+              department.
             </p>
 
             <div className="success-report-id">
               <span>REPORT ID</span>
-              <strong>{submittedReportId}</strong>
+              <strong>
+                {submittedReportId}
+              </strong>
             </div>
 
             <div className="success-actions">
@@ -277,7 +697,9 @@ function Report({
             className="report-brand"
             onClick={onBack}
           >
-            <span className="brand-mark">L</span>
+            <span className="brand-mark">
+              L
+            </span>
 
             <span className="brand-name">
               Lok<span>Setu</span>
@@ -299,10 +721,16 @@ function Report({
           <div
             className={`report-step ${
               step >= 1 ? "active" : ""
-            } ${step > 1 ? "completed" : ""}`}
+            } ${
+              step > 1 ? "completed" : ""
+            }`}
           >
             <span>
-              {step > 1 ? <Check size={13} /> : "1"}
+              {step > 1 ? (
+                <Check size={13} />
+              ) : (
+                "1"
+              )}
             </span>
 
             <div>
@@ -320,10 +748,16 @@ function Report({
           <div
             className={`report-step ${
               step >= 2 ? "active" : ""
-            } ${step > 2 ? "completed" : ""}`}
+            } ${
+              step > 2 ? "completed" : ""
+            }`}
           >
             <span>
-              {step > 2 ? <Check size={13} /> : "2"}
+              {step > 2 ? (
+                <Check size={13} />
+              ) : (
+                "2"
+              )}
             </span>
 
             <div>
@@ -361,7 +795,9 @@ function Report({
                 STEP 1 OF 3
               </span>
 
-              <h1>What needs attention?</h1>
+              <h1>
+                What needs attention?
+              </h1>
 
               <p>
                 Choose the category that best describes
@@ -372,6 +808,7 @@ function Report({
             <div className="report-category-grid">
               {categories.map((item) => {
                 const Icon = item.icon;
+
                 const selected =
                   category === item.name;
 
@@ -391,7 +828,9 @@ function Report({
                     </span>
 
                     <span>
-                      <strong>{item.name}</strong>
+                      <strong>
+                        {item.name}
+                      </strong>
 
                       <small>
                         {item.description}
@@ -433,22 +872,146 @@ function Report({
               </div>
             </div>
 
+            <input
+              ref={photoInputRef}
+              type="file"
+              accept="image/*"
+              multiple
+              hidden
+              onChange={handlePhotoChange}
+            />
+
+            <input
+              ref={fileInputRef}
+              type="file"
+              multiple
+              hidden
+              onChange={handleFileChange}
+            />
+
             <div className="evidence-row">
-              <button type="button">
+              <button
+                type="button"
+                onClick={() =>
+                  photoInputRef.current?.click()
+                }
+              >
                 <Camera size={17} />
                 Add photo
               </button>
 
-              <button type="button">
+              <button
+                type="button"
+                onClick={startRecording}
+              >
                 <Mic size={17} />
-                Add voice note
+
+                {isRecording
+                  ? `Stop recording ${formatRecordingTime(
+                      recordingTime
+                    )}`
+                  : "Add voice note"}
               </button>
 
-              <button type="button">
+              <button
+                type="button"
+                onClick={() =>
+                  fileInputRef.current?.click()
+                }
+              >
                 <Upload size={17} />
                 Add file
               </button>
             </div>
+
+            {(photoFiles.length > 0 ||
+              otherFiles.length > 0 ||
+              voiceUrl) && (
+              <div className="evidence-preview">
+                {photoFiles.map((file, index) => (
+                  <div
+                    className="evidence-item"
+                    key={`${file.name}-${file.lastModified}-${index}`}
+                  >
+                    <Camera size={15} />
+
+                    <span>
+                      {file.name}
+
+                      <small>
+                        {formatFileSize(file.size)}
+                      </small>
+                    </span>
+
+                    <button
+                      type="button"
+                      onClick={() =>
+                        removePhoto(index)
+                      }
+                      aria-label={`Remove ${file.name}`}
+                    >
+                      <X size={14} />
+                    </button>
+                  </div>
+                ))}
+
+                {otherFiles.map((file, index) => (
+                  <div
+                    className="evidence-item"
+                    key={`${file.name}-${file.lastModified}-${index}`}
+                  >
+                    <FileText size={15} />
+
+                    <span>
+                      {file.name}
+
+                      <small>
+                        {formatFileSize(file.size)}
+                      </small>
+                    </span>
+
+                    <button
+                      type="button"
+                      onClick={() =>
+                        removeFile(index)
+                      }
+                      aria-label={`Remove ${file.name}`}
+                    >
+                      <X size={14} />
+                    </button>
+                  </div>
+                ))}
+
+                {voiceUrl && (
+                  <div className="evidence-item evidence-audio">
+                    <Mic size={15} />
+
+                    <span>
+                      Voice note
+
+                      <small>
+                        {formatRecordingTime(
+                          recordingTime
+                        )}
+                      </small>
+                    </span>
+
+                    <audio
+                      controls
+                      src={voiceUrl}
+                    />
+
+                    <button
+                      type="button"
+                      onClick={removeVoiceNote}
+                      aria-label="Remove voice note"
+                    >
+                      <X size={14} />
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
           </section>
         )}
 
@@ -459,7 +1022,9 @@ function Report({
                 STEP 2 OF 3
               </span>
 
-              <h1>Where is the problem?</h1>
+              <h1>
+                Where is the problem?
+              </h1>
 
               <p>
                 Use your current location or click
@@ -545,11 +1110,10 @@ function Report({
                     ]}
                     radius={10}
                     pathOptions={{
-                      className: "report-map-marker",
+                      className:
+                        "report-map-marker",
                     }}
-                  >
-                    <></>
-                  </CircleMarker>
+                  />
                 )}
 
                 {coordinates && (
@@ -611,15 +1175,16 @@ function Report({
             </div>
           </section>
         )}
-
-        {step === 3 && (
+                {step === 3 && (
           <section className="report-content">
             <div className="report-heading">
               <span className="section-overline">
                 STEP 3 OF 3
               </span>
 
-              <h1>Check your report.</h1>
+              <h1>
+                Check your report.
+              </h1>
 
               <p>
                 Make sure everything looks right before
@@ -713,15 +1278,77 @@ function Report({
                   <span>EVIDENCE</span>
                 </div>
 
-                <div className="review-empty">
-                  <Camera size={17} />
+                {photoFiles.length === 0 &&
+                otherFiles.length === 0 &&
+                !voiceUrl ? (
+                  <div className="review-empty">
+                    <Camera size={17} />
 
-                  <span>
-                    No photos or files added
-                  </span>
-                </div>
+                    <span>
+                      No photos or files added
+                    </span>
+                  </div>
+                ) : (
+                  <div className="review-evidence-list">
+                    {photoFiles.length > 0 && (
+                      <div>
+                        <strong>
+                          Photos ({photoFiles.length})
+                        </strong>
+
+                        {photoFiles.map(
+                          (file, index) => (
+                            <span
+                              key={`${file.name}-${index}`}
+                            >
+                              {file.name}
+                            </span>
+                          )
+                        )}
+                      </div>
+                    )}
+
+                    {otherFiles.length > 0 && (
+                      <div>
+                        <strong>
+                          Files ({otherFiles.length})
+                        </strong>
+
+                        {otherFiles.map(
+                          (file, index) => (
+                            <span
+                              key={`${file.name}-${index}`}
+                            >
+                              {file.name}
+                            </span>
+                          )
+                        )}
+                      </div>
+                    )}
+
+                    {voiceUrl && (
+                      <div>
+                        <strong>
+                          Voice note
+                        </strong>
+
+                        <audio
+                          controls
+                          src={voiceUrl}
+                        />
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
             </div>
+
+            {submitError && (
+              <div className="location-error">
+                <span>!</span>
+                <p>{submitError}</p>
+              </div>
+            )}
 
             <div className="submission-note">
               <ShieldIcon />
@@ -762,9 +1389,15 @@ function Report({
               type="button"
               className="button-primary"
               onClick={submitReport}
+              disabled={submitLoading}
             >
-              Submit report
-              <ArrowRight size={15} />
+              {submitLoading
+                ? "Submitting..."
+                : "Submit report"}
+
+              {!submitLoading && (
+                <ArrowRight size={15} />
+              )}
             </button>
           )}
         </div>
