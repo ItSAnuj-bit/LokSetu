@@ -1,211 +1,615 @@
+import { useEffect, useMemo, useState } from "react";
+
 import {
   Building2,
-  Users,
-  ClipboardList,
+  Edit3,
+  Plus,
+  Trash2,
+  X,
   CheckCircle2,
-  ArrowUpRight,
+  AlertCircle,
+  LoaderCircle,
   Search,
 } from "lucide-react";
 
-const departments = [
-  {
-    name: "Public Works",
-    code: "PWD",
-    description: "Roads, drainage and public infrastructure",
-    complaints: 38,
-    pending: 9,
-    inProgress: 18,
-    resolved: 11,
-    staff: 24,
-    progress: 72,
-  },
-  {
-    name: "Water Supply",
-    code: "WSD",
-    description: "Water pipelines and public water supply",
-    complaints: 24,
-    pending: 6,
-    inProgress: 10,
-    resolved: 8,
-    staff: 16,
-    progress: 58,
-  },
-  {
-    name: "Sanitation",
-    code: "SAN",
-    description: "Waste collection and sanitation services",
-    complaints: 19,
-    pending: 3,
-    inProgress: 5,
-    resolved: 11,
-    staff: 31,
-    progress: 81,
-  },
-  {
-    name: "Electricity",
-    code: "ELEC",
-    description: "Streetlights and electrical infrastructure",
-    complaints: 16,
-    pending: 4,
-    inProgress: 7,
-    resolved: 5,
-    staff: 19,
-    progress: 64,
-  },
-];
+import { apiRequest } from "../api";
 
 function Departments() {
+  const [departments, setDepartments] = useState([]);
+
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+
+  const [error, setError] = useState("");
+  const [successMessage, setSuccessMessage] = useState("");
+
+  const [search, setSearch] = useState("");
+
+  const [showModal, setShowModal] = useState(false);
+  const [editingDepartment, setEditingDepartment] =
+    useState(null);
+
+  const [form, setForm] = useState({
+    name: "",
+    code: "",
+    description: "",
+  });
+
+  useEffect(() => {
+    loadDepartments();
+  }, []);
+
+  async function loadDepartments() {
+    try {
+      setLoading(true);
+      setError("");
+
+      const response = await apiRequest("/departments");
+
+      setDepartments(response?.departments || []);
+    } catch (err) {
+      setError(
+        err.message || "Unable to load departments."
+      );
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  const filteredDepartments = useMemo(() => {
+    const query = search.trim().toLowerCase();
+
+    if (!query) {
+      return departments;
+    }
+
+    return departments.filter((department) =>
+      [
+        department.name,
+        department.code,
+        department.description,
+      ]
+        .filter(Boolean)
+        .some((value) =>
+          String(value)
+            .toLowerCase()
+            .includes(query)
+        )
+    );
+  }, [departments, search]);
+
+  const openCreateModal = () => {
+    setEditingDepartment(null);
+
+    setForm({
+      name: "",
+      code: "",
+      description: "",
+    });
+
+    setError("");
+    setSuccessMessage("");
+    setShowModal(true);
+  };
+
+  const openEditModal = (department) => {
+    setEditingDepartment(department);
+
+    setForm({
+      name: department.name || "",
+      code: department.code || "",
+      description:
+        department.description || "",
+    });
+
+    setError("");
+    setSuccessMessage("");
+    setShowModal(true);
+  };
+
+  const closeModal = () => {
+    if (saving) {
+      return;
+    }
+
+    setShowModal(false);
+    setEditingDepartment(null);
+
+    setForm({
+      name: "",
+      code: "",
+      description: "",
+    });
+  };
+
+  const handleInputChange = (event) => {
+    const { name, value } = event.target;
+
+    setForm((previous) => ({
+      ...previous,
+      [name]: value,
+    }));
+  };
+
+  const handleSubmit = async (event) => {
+    event.preventDefault();
+
+    if (!form.name.trim()) {
+      setError("Department name is required.");
+      return;
+    }
+
+    if (!form.code.trim()) {
+      setError("Department code is required.");
+      return;
+    }
+
+    try {
+      setSaving(true);
+      setError("");
+      setSuccessMessage("");
+
+      const payload = {
+        name: form.name.trim(),
+        code: form.code.trim().toUpperCase(),
+        description:
+          form.description.trim() || null,
+      };
+
+      if (editingDepartment) {
+        await apiRequest(
+          `/admin/departments/${encodeURIComponent(
+            editingDepartment.id
+          )}`,
+          {
+            method: "PUT",
+            body: JSON.stringify(payload),
+          }
+        );
+
+        setSuccessMessage(
+          "Department updated successfully."
+        );
+      } else {
+        await apiRequest("/admin/departments", {
+          method: "POST",
+          body: JSON.stringify(payload),
+        });
+
+        setSuccessMessage(
+          "Department created successfully."
+        );
+      }
+
+      await loadDepartments();
+
+      setShowModal(false);
+      setEditingDepartment(null);
+
+      setForm({
+        name: "",
+        code: "",
+        description: "",
+      });
+    } catch (err) {
+      setError(
+        err.message ||
+          "Unable to save department."
+      );
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleDelete = async (department) => {
+    const confirmed = window.confirm(
+      `Delete "${department.name}"?`
+    );
+
+    if (!confirmed) {
+      return;
+    }
+
+    try {
+      setError("");
+      setSuccessMessage("");
+
+      await apiRequest(
+        `/admin/departments/${encodeURIComponent(
+          department.id
+        )}`,
+        {
+          method: "DELETE",
+        }
+      );
+
+      setSuccessMessage(
+        "Department deleted successfully."
+      );
+
+      await loadDepartments();
+    } catch (err) {
+      setError(
+        err.message ||
+          "Unable to delete department."
+      );
+    }
+  };
+
+  const activeCount = departments.filter(
+    (department) =>
+      department.is_active !== false
+  ).length;
+
   return (
     <div className="departments-page">
-      <div className="departments-heading">
+      <div className="departments-page-header">
         <div>
-          <h2>Departments</h2>
+          <span className="section-overline">
+            MANAGEMENT
+          </span>
+
+          <h1>Departments</h1>
+
           <p>
-            Monitor departmental workload and complaint
-            resolution.
+            Manage the departments responsible for
+            handling civic complaints.
           </p>
         </div>
 
-        <div className="departments-summary">
-          <strong>4</strong>
-          <span>Active departments</span>
-        </div>
+        <button
+          className="departments-add-button"
+          onClick={openCreateModal}
+        >
+          <Plus size={17} />
+          Add department
+        </button>
       </div>
 
-      <div className="departments-toolbar">
-        <div className="departments-search">
-          <Search size={16} />
-
-          <input
-            type="text"
-            placeholder="Search departments..."
-          />
-        </div>
-      </div>
-
-      <div className="department-stats">
-        <div className="department-stat-card">
-          <div className="department-stat-icon">
-            <Building2 size={18} />
+      <div className="departments-summary">
+        <div className="department-summary-card">
+          <div className="department-summary-icon">
+            <Building2 size={19} />
           </div>
 
           <div>
-            <span>Departments</span>
-            <strong>4</strong>
+            <span>Total departments</span>
+            <strong>{departments.length}</strong>
           </div>
         </div>
 
-        <div className="department-stat-card">
-          <div className="department-stat-icon">
-            <ClipboardList size={18} />
+        <div className="department-summary-card">
+          <div className="department-summary-icon">
+            <CheckCircle2 size={19} />
           </div>
 
           <div>
-            <span>Active complaints</span>
-            <strong>97</strong>
-          </div>
-        </div>
-
-        <div className="department-stat-card">
-          <div className="department-stat-icon">
-            <Users size={18} />
-          </div>
-
-          <div>
-            <span>Staff members</span>
-            <strong>90</strong>
-          </div>
-        </div>
-
-        <div className="department-stat-card">
-          <div className="department-stat-icon">
-            <CheckCircle2 size={18} />
-          </div>
-
-          <div>
-            <span>Average resolution</span>
-            <strong>69%</strong>
+            <span>Active departments</span>
+            <strong>{activeCount}</strong>
           </div>
         </div>
       </div>
 
-      <div className="departments-grid">
-        {departments.map((department) => (
-          <article
-            className="department-management-card"
-            key={department.code}
+      {error && (
+        <div className="departments-alert departments-alert-error">
+          <AlertCircle size={16} />
+          <span>{error}</span>
+
+          <button
+            type="button"
+            onClick={() => setError("")}
           >
-            <div className="department-card-top">
-              <div className="department-large-icon">
-                <Building2 size={20} />
-              </div>
+            <X size={15} />
+          </button>
+        </div>
+      )}
 
-              <span className="department-code">
-                {department.code}
-              </span>
+      {successMessage && (
+        <div className="departments-alert departments-alert-success">
+          <CheckCircle2 size={16} />
+          <span>{successMessage}</span>
+
+          <button
+            type="button"
+            onClick={() => setSuccessMessage("")}
+          >
+            <X size={15} />
+          </button>
+        </div>
+      )}
+
+      <section className="departments-card">
+        <div className="departments-toolbar">
+          <div>
+            <strong>All departments</strong>
+
+            <span>
+              {filteredDepartments.length}{" "}
+              {filteredDepartments.length === 1
+                ? "department"
+                : "departments"}
+            </span>
+          </div>
+
+          <div className="departments-search">
+            <Search size={16} />
+
+            <input
+              type="text"
+              placeholder="Search departments..."
+              value={search}
+              onChange={(event) =>
+                setSearch(event.target.value)
+              }
+            />
+          </div>
+        </div>
+
+        {loading ? (
+          <div className="departments-loading">
+            <LoaderCircle
+              size={20}
+              className="departments-spinner"
+            />
+            Loading departments...
+          </div>
+        ) : filteredDepartments.length === 0 ? (
+          <div className="departments-empty">
+            <div className="departments-empty-icon">
+              <Building2 size={22} />
             </div>
 
-            <h3>{department.name}</h3>
+            <strong>
+              {search
+                ? "No departments found"
+                : "No departments available"}
+            </strong>
 
-            <p>{department.description}</p>
+            <span>
+              {search
+                ? "Try a different search term."
+                : "Create your first department to get started."}
+            </span>
 
-            <div className="department-workload">
+            {!search && (
+              <button
+                className="departments-empty-button"
+                onClick={openCreateModal}
+              >
+                <Plus size={15} />
+                Add department
+              </button>
+            )}
+          </div>
+        ) : (
+          <div className="departments-table-wrapper">
+            <table className="departments-table">
+              <thead>
+                <tr>
+                  <th>Department</th>
+                  <th>Code</th>
+                  <th>Description</th>
+                  <th>Status</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+
+              <tbody>
+                {filteredDepartments.map(
+                  (department) => (
+                    <tr key={department.id}>
+                      <td>
+                        <div className="department-name-cell">
+                          <div className="department-row-icon">
+                            <Building2 size={17} />
+                          </div>
+
+                          <div>
+                            <strong>
+                              {department.name ||
+                                "Unnamed department"}
+                            </strong>
+
+                            <span>
+                              Department
+                            </span>
+                          </div>
+                        </div>
+                      </td>
+
+                      <td>
+                        <span className="department-code">
+                          {department.code ||
+                            "—"}
+                        </span>
+                      </td>
+
+                      <td>
+                        <span className="department-description">
+                          {department.description ||
+                            "No description provided."}
+                        </span>
+                      </td>
+
+                      <td>
+                        <span
+                          className={
+                            department.is_active ===
+                            false
+                              ? "department-status inactive"
+                              : "department-status active"
+                          }
+                        >
+                          <span />
+
+                          {department.is_active ===
+                          false
+                            ? "Inactive"
+                            : "Active"}
+                        </span>
+                      </td>
+
+                      <td>
+                        <div className="department-actions">
+                          <button
+                            type="button"
+                            className="department-action-button"
+                            onClick={() =>
+                              openEditModal(
+                                department
+                              )
+                            }
+                            title="Edit department"
+                          >
+                            <Edit3 size={15} />
+                          </button>
+
+                          <button
+                            type="button"
+                            className="department-action-button danger"
+                            onClick={() =>
+                              handleDelete(
+                                department
+                              )
+                            }
+                            title="Delete department"
+                          >
+                            <Trash2 size={15} />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  )
+                )}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
+
+      {showModal && (
+        <div
+          className="department-modal-overlay"
+          onMouseDown={(event) => {
+            if (
+              event.target ===
+              event.currentTarget
+            ) {
+              closeModal();
+            }
+          }}
+        >
+          <div className="department-modal">
+            <div className="department-modal-header">
               <div>
-                <span>Active workload</span>
-                <strong>
-                  {department.complaints}
-                </strong>
-              </div>
-
-              <span className="department-progress-text">
-                {department.progress}%
-              </span>
-            </div>
-
-            <div className="department-progress-track">
-              <div
-                className="department-progress-fill"
-                style={{
-                  width: `${department.progress}%`,
-                }}
-              />
-            </div>
-
-            <div className="department-breakdown">
-              <div>
-                <span>Pending</span>
-                <strong>{department.pending}</strong>
-              </div>
-
-              <div>
-                <span>In progress</span>
-                <strong>
-                  {department.inProgress}
-                </strong>
-              </div>
-
-              <div>
-                <span>Resolved</span>
-                <strong>{department.resolved}</strong>
-              </div>
-            </div>
-
-            <div className="department-card-footer">
-              <div className="department-staff">
-                <Users size={14} />
-                <span>
-                  {department.staff} staff members
+                <span className="section-overline">
+                  DEPARTMENT
                 </span>
+
+                <h2>
+                  {editingDepartment
+                    ? "Edit department"
+                    : "Add department"}
+                </h2>
+
+                <p>
+                  {editingDepartment
+                    ? "Update department information."
+                    : "Create a new department for complaint assignment."}
+                </p>
               </div>
 
-              <button className="department-view-button">
-                View
-                <ArrowUpRight size={14} />
+              <button
+                type="button"
+                className="department-modal-close"
+                onClick={closeModal}
+                disabled={saving}
+              >
+                <X size={18} />
               </button>
             </div>
-          </article>
-        ))}
-      </div>
+
+            <form
+              className="department-form"
+              onSubmit={handleSubmit}
+            >
+              <label>
+                <span>Department name</span>
+
+                <input
+                  name="name"
+                  type="text"
+                  placeholder="e.g. Public Works"
+                  value={form.name}
+                  onChange={handleInputChange}
+                  disabled={saving}
+                />
+              </label>
+
+              <label>
+                <span>Department code</span>
+
+                <input
+                  name="code"
+                  type="text"
+                  placeholder="e.g. PWD"
+                  value={form.code}
+                  onChange={handleInputChange}
+                  disabled={saving}
+                  maxLength={20}
+                />
+              </label>
+
+              <label>
+                <span>Description</span>
+
+                <textarea
+                  name="description"
+                  placeholder="Briefly describe the department's responsibilities."
+                  value={form.description}
+                  onChange={handleInputChange}
+                  disabled={saving}
+                  rows={4}
+                />
+              </label>
+
+              <div className="department-form-actions">
+                <button
+                  type="button"
+                  className="department-cancel-button"
+                  onClick={closeModal}
+                  disabled={saving}
+                >
+                  Cancel
+                </button>
+
+                <button
+                  type="submit"
+                  className="department-submit-button"
+                  disabled={saving}
+                >
+                  {saving ? (
+                    <>
+                      <LoaderCircle
+                        size={15}
+                        className="departments-spinner"
+                      />
+                      Saving...
+                    </>
+                  ) : (
+                    <>
+                      <CheckCircle2 size={15} />
+                      {editingDepartment
+                        ? "Save changes"
+                        : "Create department"}
+                    </>
+                  )}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

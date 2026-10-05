@@ -12,7 +12,6 @@ from fastapi import (
     Depends,
     Query
 )
-from fastapi.staticfiles import StaticFiles
 
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
@@ -245,11 +244,6 @@ UPLOAD_FOLDER = "uploads"
 os.makedirs(
     UPLOAD_FOLDER,
     exist_ok=True
-)
-app.mount(
-    "/uploads",
-    StaticFiles(directory=UPLOAD_FOLDER),
-    name="uploads"
 )
 
 
@@ -1619,10 +1613,6 @@ def keyword_analysis(
 # GEMINI ANALYSIS
 # ============================================================
 
-# ============================================================
-# GEMINI ANALYSIS
-# ============================================================
-
 def gemini_analysis(
     description,
     location
@@ -1638,12 +1628,7 @@ You are the AI Incident Engine for LokSetu.
 Analyze this citizen civic complaint.
 
 The complaint may be written in:
-- English
-- Hindi
-- Hinglish
-- Speech-to-text Hindi
-
-Understand the actual civic problem regardless of language.
+English, Hindi, Hinglish or speech-to-text Hindi.
 
 Complaint:
 {description}
@@ -1653,7 +1638,7 @@ Location:
 
 Return ONLY valid JSON.
 
-Use exactly these fields:
+Use exactly:
 
 {{
     "category": "",
@@ -1663,46 +1648,22 @@ Use exactly these fields:
     "affected_area": "",
     "required_work": "",
     "required_skills": [],
-    "estimated_cost": "",
-    "temporary_solution": ""
+    "estimated_cost": ""
 }}
 
-Allowed severity values:
+Allowed severity:
 Low, Medium, High
 
-Allowed priority values:
+Allowed priority:
 Normal, High, Critical
 
 Required skills must be a JSON array.
 
-Estimated cost must be an approximate range in Indian Rupees.
+Estimated cost should be an approximate range in Indian Rupees.
 
-Temporary solution must describe a safe short-term measure that can reduce risk or inconvenience until permanent repair is completed.
+Classify the actual civic problem.
 
-Do not invent an exact official government quotation.
-
-If the cost cannot reasonably be estimated from the available information,
-return:
-"Requires Inspection"
-
-For temporary solutions, do not recommend dangerous actions.
-If the issue requires a professional or emergency response,
-say so clearly.
-
-Classify the actual problem described in the complaint.
-
-For example:
-
-Complaint:
-"mere ghar ke pass ped gir gaya hai"
-
-This should be classified as a fallen tree/public safety incident,
-not as a house infrastructure problem.
-
-Do not classify an incident only because a school,
-hospital, house, or other building is mentioned.
-
-Do not add any explanation outside the JSON.
+Do not add explanation outside JSON.
 """
 
     try:
@@ -1728,7 +1689,9 @@ Do not add any explanation outside the JSON.
             "text"
         ):
 
-            response_text = response.text
+            response_text = (
+                response.text
+            )
 
         else:
 
@@ -1737,7 +1700,8 @@ Do not add any explanation outside the JSON.
             )
 
         response_text = (
-            response_text.strip()
+            response_text
+            .strip()
         )
 
         if response_text.startswith(
@@ -1757,11 +1721,9 @@ Do not add any explanation outside the JSON.
                 .strip()
             )
 
-        result = json.loads(
+        return json.loads(
             response_text
         )
-
-        return result
 
     except Exception as e:
 
@@ -1771,97 +1733,6 @@ Do not add any explanation outside the JSON.
         )
 
         return None
-# ============================================================
-# TEMPORARY SOLUTION FALLBACK
-# ============================================================
-
-def get_temporary_solution(
-    analysis
-):
-
-    category = str(
-        analysis.get(
-            "category",
-            ""
-        )
-    ).lower()
-
-    incident_type = str(
-        analysis.get(
-            "incident_type",
-            ""
-        )
-    ).lower()
-
-    if (
-        "road" in category
-        or "pothole" in incident_type
-        or "road" in incident_type
-    ):
-
-        return (
-            "Barricade or clearly mark the damaged area "
-            "and place warning signage until permanent "
-            "road repair is completed."
-        )
-
-    if (
-        "water" in category
-        or "drain" in category
-        or "leak" in incident_type
-    ):
-
-        return (
-            "If safe, restrict access to the affected area "
-            "and report the leak or blockage to the responsible "
-            "department until permanent repair."
-        )
-
-    if "electricity" in category:
-
-        return (
-            "Keep people away from exposed electrical equipment "
-            "or wires and contact the electricity department. "
-            "Do not touch or attempt to repair electrical equipment."
-        )
-
-    if (
-        "waste" in category
-        or "garbage" in incident_type
-    ):
-
-        return (
-            "Avoid contact with the waste and keep people away "
-            "from the affected area until municipal collection "
-            "and cleaning is completed."
-        )
-
-    if (
-        "fire" in category
-        or "hazard" in category
-    ):
-
-        return (
-            "Keep people away from the hazardous area and "
-            "contact the appropriate emergency or municipal "
-            "response team."
-        )
-
-    if (
-        "environment" in category
-        or "tree" in incident_type
-    ):
-
-        return (
-            "Keep people away from the affected area and "
-            "mark or barricade the hazard until municipal "
-            "personnel can safely remove or secure it."
-        )
-
-    return (
-        "Keep the affected area clear and report the issue "
-        "to the responsible department for inspection."
-    )
 
 
 # ============================================================
@@ -2195,58 +2066,6 @@ def create_modern_complaint(
 
     now = datetime.utcnow()
 
-
-    # --------------------------------------------------------
-    # AI ANALYSIS
-    # --------------------------------------------------------
-
-    ai_analysis = gemini_analysis(
-        complaint.description,
-        location
-    )
-
-    if ai_analysis:
-
-        ai_used = "Gemini"
-
-    else:
-
-        ai_analysis = keyword_analysis(
-            complaint.description,
-            location,
-            None
-        )
-
-        ai_used = "Keyword Fallback"
-
-    if not isinstance(
-        ai_analysis,
-        dict
-    ):
-
-        ai_analysis = {}
-
-    temporary_solution = (
-        ai_analysis.get(
-            "temporary_solution"
-        )
-    )
-
-    if not temporary_solution:
-
-        temporary_solution = get_temporary_solution(
-            ai_analysis
-        )
-
-    ai_analysis["temporary_solution"] = (
-        temporary_solution
-    )
-
-    ai_analysis["ai_used"] = (
-        ai_used
-    )
-
-    
     document = {
 
         "complaint_id":
@@ -2270,11 +2089,8 @@ def create_modern_complaint(
         "photo_urls":
             [],
 
-        "evidence":
-            [],
-
         "ai_analysis":
-            ai_analysis,
+            None,
 
         "status":
             "pending",
@@ -2286,12 +2102,7 @@ def create_modern_complaint(
             None,
 
         "priority":
-            str(
-                ai_analysis.get(
-                "priority",
-                complaint.priority
-                )
-            ).lower(),
+            complaint.priority,
 
         "created_at":
             now,
@@ -2350,208 +2161,6 @@ def create_modern_complaint(
                 "pending"
 
         }
-
-    }
-# ============================================================
-# CITIZEN - COMPLAINT EVIDENCE
-# ============================================================
-
-@app.post(
-    "/complaints/{complaint_id}/evidence"
-)
-async def upload_complaint_evidence(
-
-    complaint_id: str,
-
-    evidence_type: str = Form(...),
-
-    file: UploadFile = File(...),
-
-    current_user=Depends(
-        require_citizen
-    )
-
-):
-
-    allowed_types = {
-
-        "photo": [
-            "image/jpeg",
-            "image/png",
-            "image/jpg",
-            "image/webp"
-        ],
-
-        "voice": [
-            "audio/webm",
-            "audio/wav",
-            "audio/x-wav",
-            "audio/mpeg",
-            "audio/ogg",
-            "audio/mp4",
-            "audio/aac"
-        ],
-
-        "file": [
-            "application/pdf",
-            "text/plain",
-            "application/msword",
-            "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-        ]
-
-    }
-
-    if evidence_type not in allowed_types:
-
-        raise HTTPException(
-            status_code=400,
-            detail="Invalid evidence type"
-        )
-
-    if file.content_type not in allowed_types[evidence_type]:
-
-        raise HTTPException(
-            status_code=400,
-            detail=f"Invalid {evidence_type} file type"
-        )
-
-    complaint = complaints_collection.find_one(
-        {
-            "complaint_id": complaint_id,
-            "citizen_id": current_user["user_id"]
-        }
-    )
-
-    if not complaint:
-
-        raise HTTPException(
-            status_code=404,
-            detail="Complaint not found"
-        )
-
-    MAX_FILE_SIZE = 20 * 1024 * 1024
-
-    file_data = await file.read()
-
-    if len(file_data) > MAX_FILE_SIZE:
-
-        raise HTTPException(
-            status_code=400,
-            detail="File size must not exceed 20 MB"
-        )
-
-    original_name = os.path.basename(
-        file.filename or "evidence"
-    )
-
-    timestamp = datetime.utcnow().strftime(
-        "%Y%m%d%H%M%S"
-    )
-
-    random_id = secrets.token_urlsafe(8)
-
-    filename = (
-        f"{timestamp}_{random_id}_{original_name}"
-    )
-
-    file_path = os.path.join(
-        UPLOAD_FOLDER,
-        filename
-    )
-
-    with open(
-        file_path,
-        "wb"
-    ) as buffer:
-
-        buffer.write(file_data)
-
-    now = datetime.utcnow()
-
-    evidence = {
-
-        "type": evidence_type,
-
-        "original_name":
-            original_name,
-
-        "content_type":
-            file.content_type,
-
-        "size":
-            len(file_data),
-
-        "url":
-            f"/uploads/{filename}",
-
-        "uploaded_by":
-            current_user["user_id"],
-
-        "uploaded_at":
-            now
-
-    }
-
-    update_data = {
-
-        "$push": {
-            "evidence":
-                evidence
-        },
-
-        "$set": {
-            "updated_at":
-                now
-        }
-
-    }
-
-    if evidence_type == "photo":
-
-        update_data["$push"][
-            "photo_urls"
-        ] = f"/uploads/{filename}"
-
-    complaints_collection.update_one(
-        {
-            "_id":
-                complaint["_id"]
-        },
-        update_data
-    )
-
-    activity_collection.insert_one({
-
-        "complaint_id":
-            complaint_id,
-
-        "actor_id":
-            current_user["user_id"],
-
-        "actor_role":
-            current_user["role"],
-
-        "action":
-            "evidence_uploaded",
-
-        "description":
-            f"{evidence_type.capitalize()} evidence uploaded.",
-
-        "created_at":
-            now
-
-    })
-
-    return {
-
-        "success":
-            True,
-
-        "message":
-            "Evidence uploaded successfully",
-
-        "evidence":
-            evidence
 
     }
 

@@ -1,128 +1,218 @@
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import {
   Bell,
-  CalendarDays,
-  Megaphone,
   Plus,
   Search,
+  Megaphone,
   X,
-  Eye,
-  Pencil,
-  Trash2,
+  CheckCircle2,
+  AlertCircle,
+  LoaderCircle,
+  MapPin,
+  CalendarDays,
 } from "lucide-react";
 
-const initialUpdates = [
-  {
-    id: 1,
-    title: "Water supply maintenance in Ward 9",
-    category: "Services",
-    status: "Published",
-    date: "20 Sep 2026",
-    description:
-      "Water supply will remain temporarily affected in Ward 9 due to scheduled pipeline maintenance.",
-  },
-  {
-    id: 2,
-    title: "Garbage collection schedule updated",
-    category: "Notices",
-    status: "Published",
-    date: "19 Sep 2026",
-    description:
-      "The garbage collection schedule has been updated for selected wards.",
-  },
-  {
-    id: 3,
-    title: "Road repair work begins on Main Road",
-    category: "Services",
-    status: "Draft",
-    date: "18 Sep 2026",
-    description:
-      "Repair work is scheduled to begin on the Main Road near Ward 3.",
-  },
-  {
-    id: 4,
-    title: "Community cleanliness drive",
-    category: "Community",
-    status: "Published",
-    date: "16 Sep 2026",
-    description:
-      "A community cleanliness drive will be organised across selected areas.",
-  },
-];
-
-const categories = [
-  "Services",
-  "Community",
-  "Safety",
-  "Notices",
-];
+import { apiRequest } from "../api";
 
 function Updates() {
-  const [updates, setUpdates] =
-    useState(initialUpdates);
+  const [updates, setUpdates] = useState([]);
 
-  const [showModal, setShowModal] =
-    useState(false);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
 
   const [search, setSearch] = useState("");
 
+  const [showModal, setShowModal] = useState(false);
+
+  const [error, setError] = useState("");
+  const [successMessage, setSuccessMessage] =
+    useState("");
+
   const [form, setForm] = useState({
     title: "",
-    category: "Services",
     description: "",
+    category: "General",
+    ward: "",
   });
 
-  const filteredUpdates = updates.filter(
-    (update) =>
-      update.title
-        .toLowerCase()
-        .includes(search.toLowerCase()) ||
-      update.category
-        .toLowerCase()
-        .includes(search.toLowerCase())
-  );
+  useEffect(() => {
+    loadUpdates();
+  }, []);
 
-  const handleCreate = (event) => {
-    event.preventDefault();
+  async function loadUpdates() {
+    try {
+      setLoading(true);
+      setError("");
 
-    if (!form.title.trim() || !form.description.trim()) {
+      const response = await apiRequest(
+        "/updates"
+      );
+
+      setUpdates(
+        Array.isArray(response?.updates)
+          ? response.updates
+          : []
+      );
+    } catch (err) {
+      setError(
+        err.message ||
+          "Unable to load updates."
+      );
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  const filteredUpdates = useMemo(() => {
+    const query = search.trim().toLowerCase();
+
+    if (!query) {
+      return updates;
+    }
+
+    return updates.filter((update) =>
+      [
+        update.title,
+        update.description,
+        update.category,
+        update.ward,
+      ]
+        .filter(Boolean)
+        .some((value) =>
+          String(value)
+            .toLowerCase()
+            .includes(query)
+        )
+    );
+  }, [updates, search]);
+
+  const publishedCount = updates.filter(
+    (item) => item.status === "published"
+  ).length;
+
+  const openCreateModal = () => {
+    setForm({
+      title: "",
+      description: "",
+      category: "General",
+      ward: "",
+    });
+
+    setError("");
+    setSuccessMessage("");
+    setShowModal(true);
+  };
+
+  const closeCreateModal = () => {
+    if (saving) {
       return;
     }
 
-    const newUpdate = {
-      id: Date.now(),
-      title: form.title,
-      category: form.category,
-      status: "Draft",
-      date: "20 Sep 2026",
-      description: form.description,
-    };
-
-    setUpdates((current) => [
-      newUpdate,
-      ...current,
-    ]);
+    setShowModal(false);
 
     setForm({
       title: "",
-      category: "Services",
       description: "",
+      category: "General",
+      ward: "",
     });
-
-    setShowModal(false);
   };
 
-  const handleDelete = (id) => {
-    setUpdates((current) =>
-      current.filter((update) => update.id !== id)
-    );
+  const handleChange = (event) => {
+    const { name, value } = event.target;
+
+    setForm((previous) => ({
+      ...previous,
+      [name]: value,
+    }));
+  };
+
+  const handleCreateUpdate = async (event) => {
+    event.preventDefault();
+
+    if (!form.title.trim()) {
+      setError("Update title is required.");
+      return;
+    }
+
+    if (!form.description.trim()) {
+      setError(
+        "Update description is required."
+      );
+      return;
+    }
+
+    try {
+      setSaving(true);
+      setError("");
+      setSuccessMessage("");
+
+      await apiRequest("/admin/updates", {
+        method: "POST",
+        body: JSON.stringify({
+          title: form.title.trim(),
+          description:
+            form.description.trim(),
+          category:
+            form.category.trim() || "General",
+          ward: form.ward.trim() || null,
+          status: "published",
+        }),
+      });
+
+      setShowModal(false);
+
+      setForm({
+        title: "",
+        description: "",
+        category: "General",
+        ward: "",
+      });
+
+      setSuccessMessage(
+        "Update published successfully."
+      );
+
+      await loadUpdates();
+    } catch (err) {
+      setError(
+        err.message ||
+          "Unable to publish update."
+      );
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const formatDate = (value) => {
+    if (!value) {
+      return "—";
+    }
+
+    const date = new Date(value);
+
+    if (Number.isNaN(date.getTime())) {
+      return value;
+    }
+
+    return date.toLocaleString("en-IN", {
+      day: "2-digit",
+      month: "short",
+      year: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
   };
 
   return (
     <div className="updates-page">
       <div className="updates-heading">
         <div>
+          <span className="section-overline">
+            PUBLIC COMMUNICATION
+          </span>
+
           <h2>Updates</h2>
 
           <p>
@@ -133,7 +223,7 @@ function Updates() {
 
         <button
           className="create-update-button"
-          onClick={() => setShowModal(true)}
+          onClick={openCreateModal}
         >
           <Plus size={16} />
           Create update
@@ -147,7 +237,7 @@ function Updates() {
           </div>
 
           <div>
-            <span>Total updates</span>
+            <span>Total published</span>
             <strong>{updates.length}</strong>
           </div>
         </div>
@@ -159,34 +249,57 @@ function Updates() {
 
           <div>
             <span>Published</span>
-            <strong>
-              {
-                updates.filter(
-                  (item) =>
-                    item.status === "Published"
-                ).length
-              }
-            </strong>
+            <strong>{publishedCount}</strong>
           </div>
         </div>
 
         <div className="updates-summary-card">
           <div className="updates-summary-icon">
-            <Pencil size={18} />
+            <CalendarDays size={18} />
           </div>
 
           <div>
-            <span>Drafts</span>
+            <span>Latest</span>
             <strong>
-              {
-                updates.filter(
-                  (item) => item.status === "Draft"
-                ).length
-              }
+              {updates.length > 0
+                ? "Active"
+                : "—"}
             </strong>
           </div>
         </div>
       </div>
+
+      {error && (
+        <div className="updates-alert updates-alert-error">
+          <AlertCircle size={16} />
+
+          <span>{error}</span>
+
+          <button
+            onClick={() => setError("")}
+            aria-label="Close error"
+          >
+            <X size={15} />
+          </button>
+        </div>
+      )}
+
+      {successMessage && (
+        <div className="updates-alert updates-alert-success">
+          <CheckCircle2 size={16} />
+
+          <span>{successMessage}</span>
+
+          <button
+            onClick={() =>
+              setSuccessMessage("")
+            }
+            aria-label="Close message"
+          >
+            <X size={15} />
+          </button>
+        </div>
+      )}
 
       <div className="updates-toolbar">
         <div className="updates-search">
@@ -202,190 +315,257 @@ function Updates() {
         </div>
       </div>
 
-      <div className="admin-updates-list">
-        {filteredUpdates.map((update) => (
-          <article
-            className="admin-update-card"
-            key={update.id}
-          >
-            <div className="admin-update-icon">
-              <Bell size={19} />
-            </div>
+      {loading ? (
+        <div className="updates-loading">
+          <LoaderCircle
+            size={20}
+            className="updates-spinner"
+          />
 
-            <div className="admin-update-content">
-              <div className="admin-update-top">
-                <div>
-                  <span className="admin-update-category">
-                    {update.category}
+          Loading updates...
+        </div>
+      ) : filteredUpdates.length === 0 ? (
+        <div className="updates-empty">
+          <div className="updates-empty-icon">
+            <Bell size={22} />
+          </div>
+
+          <strong>
+            {search
+              ? "No updates found"
+              : "No published updates"}
+          </strong>
+
+          <span>
+            {search
+              ? "Try a different search term."
+              : "Create your first civic announcement."}
+          </span>
+
+          {!search && (
+            <button
+              className="updates-empty-button"
+              onClick={openCreateModal}
+            >
+              <Plus size={15} />
+              Create update
+            </button>
+          )}
+        </div>
+      ) : (
+        <div className="admin-updates-list">
+          {filteredUpdates.map((update) => (
+            <article
+              className="admin-update-card"
+              key={update.id}
+            >
+              <div className="admin-update-icon">
+                <Bell size={19} />
+              </div>
+
+              <div className="admin-update-content">
+                <div className="admin-update-top">
+                  <div>
+                    <span className="admin-update-category">
+                      {update.category ||
+                        "General"}
+                    </span>
+
+                    <h3>
+                      {update.title ||
+                        "Untitled update"}
+                    </h3>
+                  </div>
+
+                  <span className="update-status update-published">
+                    Published
+                  </span>
+                </div>
+
+                <p>
+                  {update.description ||
+                    "No description provided."}
+                </p>
+
+                <div className="admin-update-footer">
+                  <span>
+                    <CalendarDays size={12} />
+
+                    {formatDate(
+                      update.published_at ||
+                        update.created_at
+                    )}
                   </span>
 
-                  <h3>{update.title}</h3>
-                </div>
+                  <span>
+                    <MapPin size={12} />
 
-                <span
-                  className={`update-status ${
-                    update.status === "Published"
-                      ? "update-published"
-                      : "update-draft"
-                  }`}
-                >
-                  {update.status}
-                </span>
-              </div>
-
-              <p>{update.description}</p>
-
-              <div className="admin-update-footer">
-                <span>
-                  <CalendarDays size={13} />
-                  {update.date}
-                </span>
-
-                <div className="admin-update-actions">
-                  <button
-                    title="Preview"
-                    aria-label="Preview update"
-                  >
-                    <Eye size={15} />
-                  </button>
-
-                  <button
-                    title="Edit"
-                    aria-label="Edit update"
-                  >
-                    <Pencil size={15} />
-                  </button>
-
-                  <button
-                    title="Delete"
-                    aria-label="Delete update"
-                    onClick={() =>
-                      handleDelete(update.id)
-                    }
-                  >
-                    <Trash2 size={15} />
-                  </button>
+                    {update.ward ||
+                      "All wards"}
+                  </span>
                 </div>
               </div>
-            </div>
-          </article>
-        ))}
-
-        {filteredUpdates.length === 0 && (
-          <div className="updates-empty">
-            <Bell size={25} />
-
-            <strong>No updates found</strong>
-
-            <span>
-              Try a different search or create a new
-              update.
-            </span>
-          </div>
-        )}
-      </div>
+            </article>
+          ))}
+        </div>
+      )}
 
       {showModal && (
         <div
           className="update-modal-overlay"
-          onMouseDown={() => setShowModal(false)}
-        >
-          <div
-            className="update-modal"
-            onMouseDown={(event) =>
-              event.stopPropagation()
+          onMouseDown={(event) => {
+            if (
+              event.target ===
+              event.currentTarget
+            ) {
+              closeCreateModal();
             }
-          >
+          }}
+        >
+          <div className="update-modal">
             <div className="update-modal-header">
               <div>
-                <h3>Create civic update</h3>
+                <span className="section-overline">
+                  PUBLIC ANNOUNCEMENT
+                </span>
+
+                <h2>Create update</h2>
 
                 <p>
-                  This will initially be saved as a
-                  draft.
+                  Publish an announcement that
+                  citizens can see.
                 </p>
               </div>
 
               <button
-                onClick={() => setShowModal(false)}
+                className="update-modal-close"
+                onClick={closeCreateModal}
+                disabled={saving}
                 aria-label="Close"
               >
                 <X size={18} />
               </button>
             </div>
 
-            <form onSubmit={handleCreate}>
-              <label className="update-form-field">
+            <form
+              className="update-form"
+              onSubmit={handleCreateUpdate}
+            >
+              <label>
                 <span>Title</span>
 
                 <input
+                  name="title"
+                  type="text"
+                  placeholder="e.g. Water supply maintenance"
                   value={form.title}
-                  onChange={(event) =>
-                    setForm({
-                      ...form,
-                      title: event.target.value,
-                    })
-                  }
-                  placeholder="Enter update title"
+                  onChange={handleChange}
+                  disabled={saving}
                 />
               </label>
 
-              <label className="update-form-field">
-                <span>Category</span>
-
-                <select
-                  value={form.category}
-                  onChange={(event) =>
-                    setForm({
-                      ...form,
-                      category: event.target.value,
-                    })
-                  }
-                >
-                  {categories.map((category) => (
-                    <option
-                      key={category}
-                      value={category}
-                    >
-                      {category}
-                    </option>
-                  ))}
-                </select>
-              </label>
-
-              <label className="update-form-field">
+              <label>
                 <span>Description</span>
 
                 <textarea
-                  value={form.description}
-                  onChange={(event) =>
-                    setForm({
-                      ...form,
-                      description:
-                        event.target.value,
-                    })
-                  }
-                  placeholder="Write the civic update..."
+                  name="description"
                   rows="5"
+                  placeholder="Write the announcement details..."
+                  value={form.description}
+                  onChange={handleChange}
+                  disabled={saving}
                 />
               </label>
 
-              <div className="update-modal-actions">
+              <div className="update-form-grid">
+                <label>
+                  <span>Category</span>
+
+                  <select
+                    name="category"
+                    value={form.category}
+                    onChange={handleChange}
+                    disabled={saving}
+                  >
+                    <option value="General">
+                      General
+                    </option>
+
+                    <option value="Water">
+                      Water
+                    </option>
+
+                    <option value="Electricity">
+                      Electricity
+                    </option>
+
+                    <option value="Roads">
+                      Roads
+                    </option>
+
+                    <option value="Sanitation">
+                      Sanitation
+                    </option>
+
+                    <option value="Emergency">
+                      Emergency
+                    </option>
+
+                    <option value="Public Notice">
+                      Public Notice
+                    </option>
+                  </select>
+                </label>
+
+                <label>
+                  <span>Ward</span>
+
+                  <input
+                    name="ward"
+                    type="text"
+                    placeholder="Leave empty for all wards"
+                    value={form.ward}
+                    onChange={handleChange}
+                    disabled={saving}
+                  />
+                </label>
+              </div>
+
+              <div className="update-form-note">
+                This announcement will be published
+                immediately and will become visible
+                through the citizen Updates section.
+              </div>
+
+              <div className="update-form-actions">
                 <button
                   type="button"
                   className="update-cancel-button"
-                  onClick={() =>
-                    setShowModal(false)
-                  }
+                  onClick={closeCreateModal}
+                  disabled={saving}
                 >
                   Cancel
                 </button>
 
                 <button
                   type="submit"
-                  className="update-save-button"
+                  className="update-submit-button"
+                  disabled={saving}
                 >
-                  Save draft
+                  {saving ? (
+                    <>
+                      <LoaderCircle
+                        size={15}
+                        className="updates-spinner"
+                      />
+                      Publishing...
+                    </>
+                  ) : (
+                    <>
+                      <Megaphone size={15} />
+                      Publish update
+                    </>
+                  )}
                 </button>
               </div>
             </form>

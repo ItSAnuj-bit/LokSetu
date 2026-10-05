@@ -1,3 +1,5 @@
+import { useEffect, useMemo, useState } from "react";
+
 import {
   Search,
   SlidersHorizontal,
@@ -6,94 +8,213 @@ import {
   ArrowUpRight,
 } from "lucide-react";
 
-const complaints = [
-  {
-    id: "LS-2026-00184",
-    title: "Streetlight not working",
-    category: "Streetlight",
-    location: "Ward 7, Safidon",
-    status: "In progress",
-    date: "18 Sep 2026",
-    citizen: "Rahul Kumar",
-  },
-  {
-    id: "LS-2026-00182",
-    title: "Garbage collection missed",
-    category: "Waste",
-    location: "Ward 5, Safidon",
-    status: "Pending",
-    date: "18 Sep 2026",
-    citizen: "Priya Sharma",
-  },
-  {
-    id: "LS-2026-00179",
-    title: "Large road pothole",
-    category: "Roads",
-    location: "Ward 3, Safidon",
-    status: "Resolved",
-    date: "17 Sep 2026",
-    citizen: "Amit Singh",
-  },
-  {
-    id: "LS-2026-00176",
-    title: "Water supply interruption",
-    category: "Water",
-    location: "Ward 9, Safidon",
-    status: "In progress",
-    date: "17 Sep 2026",
-    citizen: "Neha Verma",
-  },
-  {
-    id: "LS-2026-00174",
-    title: "Damaged streetlight pole",
-    category: "Streetlight",
-    location: "Ward 2, Safidon",
-    status: "Pending",
-    date: "16 Sep 2026",
-    citizen: "Vikas Malik",
-  },
-  {
-    id: "LS-2026-00171",
-    title: "Overflowing garbage point",
-    category: "Waste",
-    location: "Ward 6, Safidon",
-    status: "Resolved",
-    date: "16 Sep 2026",
-    citizen: "Sonia Devi",
-  },
-  {
-    id: "LS-2026-00168",
-    title: "Broken water pipeline",
-    category: "Water",
-    location: "Ward 4, Safidon",
-    status: "In progress",
-    date: "15 Sep 2026",
-    citizen: "Deepak Kumar",
-  },
-  {
-    id: "LS-2026-00164",
-    title: "Road surface damaged",
-    category: "Roads",
-    location: "Ward 8, Safidon",
-    status: "Resolved",
-    date: "15 Sep 2026",
-    citizen: "Rakesh Yadav",
-  },
-];
+import { apiRequest } from "../api";
 
 function getStatusClass(status) {
-  if (status === "Resolved") {
+  const normalizedStatus = String(status || "").toLowerCase();
+
+  if (
+    normalizedStatus === "resolved" ||
+    normalizedStatus === "completed"
+  ) {
     return "status-resolved";
   }
 
-  if (status === "In progress") {
+  if (
+    normalizedStatus === "in_progress" ||
+    normalizedStatus === "in progress"
+  ) {
     return "status-progress";
   }
 
   return "status-pending";
 }
 
+function formatStatus(status) {
+  const normalizedStatus = String(status || "")
+    .toLowerCase()
+    .replaceAll("_", " ");
+
+  if (!normalizedStatus) {
+    return "Pending";
+  }
+
+  return normalizedStatus
+    .split(" ")
+    .map(
+      (word) =>
+        word.charAt(0).toUpperCase() +
+        word.slice(1)
+    )
+    .join(" ");
+}
+
+function formatDate(dateValue) {
+  if (!dateValue) {
+    return "—";
+  }
+
+  const date = new Date(dateValue);
+
+  if (Number.isNaN(date.getTime())) {
+    return "—";
+  }
+
+  return date.toLocaleDateString("en-IN", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+  });
+}
+
+function getLocationText(location) {
+  if (!location) {
+    return "Location unavailable";
+  }
+
+  if (typeof location === "string") {
+    return location;
+  }
+
+  const parts = [
+    location.address,
+    location.ward
+      ? `Ward ${location.ward}`
+      : null,
+    location.city,
+    location.state,
+  ].filter(Boolean);
+
+  return parts.length > 0
+    ? parts.join(", ")
+    : "Location unavailable";
+}
+
 function Complaints({ onOpenComplaint }) {
+  const [complaints, setComplaints] = useState([]);
+
+  const [search, setSearch] = useState("");
+  const [statusFilter, setStatusFilter] = useState("all");
+  const [categoryFilter, setCategoryFilter] = useState("all");
+
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    let mounted = true;
+
+    async function loadComplaints() {
+      setLoading(true);
+      setError("");
+
+      try {
+        const data = await apiRequest(
+          "/admin/complaints"
+        );
+
+        if (!mounted) {
+          return;
+        }
+
+        setComplaints(
+          Array.isArray(data?.complaints)
+            ? data.complaints
+            : []
+        );
+      } catch (err) {
+        if (!mounted) {
+          return;
+        }
+
+        console.error(
+          "Failed to load complaints:",
+          err
+        );
+
+        setError(
+          err.message ||
+            "Unable to load complaints."
+        );
+      } finally {
+        if (mounted) {
+          setLoading(false);
+        }
+      }
+    }
+
+    loadComplaints();
+
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  const categories = useMemo(() => {
+    const values = complaints
+      .map((complaint) => complaint.category)
+      .filter(Boolean);
+
+    return [...new Set(values)].sort();
+  }, [complaints]);
+
+  const filteredComplaints = useMemo(() => {
+    const searchValue = search
+      .trim()
+      .toLowerCase();
+
+    return complaints.filter((complaint) => {
+      const complaintStatus = String(
+        complaint.status || ""
+      ).toLowerCase();
+
+      const complaintCategory = String(
+        complaint.category || ""
+      ).toLowerCase();
+
+      const matchesStatus =
+        statusFilter === "all" ||
+        complaintStatus ===
+          statusFilter.toLowerCase();
+
+      const matchesCategory =
+        categoryFilter === "all" ||
+        complaintCategory ===
+          categoryFilter.toLowerCase();
+
+      if (!matchesStatus || !matchesCategory) {
+        return false;
+      }
+
+      if (!searchValue) {
+        return true;
+      }
+
+      const searchableText = [
+        complaint.complaint_id,
+        complaint.id,
+        complaint.title,
+        complaint.description,
+        complaint.category,
+        complaintStatus,
+        getLocationText(
+          complaint.location
+        ),
+      ]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase();
+
+      return searchableText.includes(searchValue);
+    });
+  }, [
+    complaints,
+    search,
+    statusFilter,
+    categoryFilter,
+  ]);
+
+  const totalComplaints = complaints.length;
+
   return (
     <div className="complaints-page">
       <div className="complaints-heading">
@@ -105,7 +226,7 @@ function Complaints({ onOpenComplaint }) {
         </div>
 
         <div className="complaints-total">
-          <strong>248</strong>
+          <strong>{totalComplaints}</strong>
           <span>Total complaints</span>
         </div>
       </div>
@@ -117,23 +238,75 @@ function Complaints({ onOpenComplaint }) {
           <input
             type="text"
             placeholder="Search complaints, ID or location..."
+            value={search}
+            onChange={(event) =>
+              setSearch(event.target.value)
+            }
           />
         </div>
 
-        <button className="complaints-filter">
+        <div className="complaints-filter">
           <SlidersHorizontal size={16} />
-          Status
-          <span>All</span>
-        </button>
 
-        <button className="complaints-filter">
-          Category
-          <span>All</span>
-        </button>
+          <select
+            value={statusFilter}
+            onChange={(event) =>
+              setStatusFilter(event.target.value)
+            }
+            aria-label="Filter by status"
+          >
+            <option value="all">
+              Status: All
+            </option>
+            <option value="pending">
+              Pending
+            </option>
+            <option value="in_progress">
+              In progress
+            </option>
+            <option value="resolved">
+              Resolved
+            </option>
+            <option value="rejected">
+              Rejected
+            </option>
+          </select>
+        </div>
 
-        <button className="complaints-filter">
-          Date
+        <div className="complaints-filter">
+          <select
+            value={categoryFilter}
+            onChange={(event) =>
+              setCategoryFilter(event.target.value)
+            }
+            aria-label="Filter by category"
+          >
+            <option value="all">
+              Category: All
+            </option>
+
+            {categories.map((category) => (
+              <option
+                value={category}
+                key={category}
+              >
+                {category}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <button
+          className="complaints-filter"
+          type="button"
+          onClick={() => {
+            setSearch("");
+            setStatusFilter("all");
+            setCategoryFilter("all");
+          }}
+        >
           <CalendarDays size={15} />
+          Reset
         </button>
       </div>
 
@@ -141,12 +314,17 @@ function Complaints({ onOpenComplaint }) {
         <div className="complaints-table-header">
           <div>
             <strong>All complaints</strong>
-            <span>Showing 8 of 248 complaints</span>
+
+            <span>
+              {loading
+                ? "Loading complaints..."
+                : `Showing ${filteredComplaints.length} of ${totalComplaints} complaints`}
+            </span>
           </div>
 
-          <button className="table-sort">
+          <span className="table-sort">
             Latest first
-          </button>
+          </span>
         </div>
 
         <div className="complaints-table">
@@ -159,54 +337,117 @@ function Complaints({ onOpenComplaint }) {
             <span />
           </div>
 
-          {complaints.map((complaint) => (
-            <button
-              className="complaint-table-row"
-              key={complaint.id}
-              onClick={() =>
-                onOpenComplaint(complaint)
-              }
-            >
-              <div className="table-complaint">
-                <div className="table-complaint-icon">
-                  <ArrowUpRight size={15} />
-                </div>
+          {loading && (
+            <div className="complaints-empty">
+              Loading complaints...
+            </div>
+          )}
 
-                <div>
-                  <strong>{complaint.title}</strong>
+          {!loading && error && (
+            <div className="complaints-empty">
+              <strong>
+                Unable to load complaints
+              </strong>
 
-                  <span>
-                    {complaint.id} · {complaint.citizen}
-                  </span>
-                </div>
-              </div>
+              <span>{error}</span>
 
-              <span className="table-category">
-                {complaint.category}
-              </span>
-
-              <span className="table-location">
-                <MapPin size={13} />
-                {complaint.location}
-              </span>
-
-              <span
-                className={`complaint-status ${getStatusClass(
-                  complaint.status
-                )}`}
+              <button
+                type="button"
+                onClick={() =>
+                  window.location.reload()
+                }
               >
-                {complaint.status}
-              </span>
+                Retry
+              </button>
+            </div>
+          )}
 
-              <span className="table-date">
-                {complaint.date}
-              </span>
+          {!loading &&
+            !error &&
+            filteredComplaints.length === 0 && (
+              <div className="complaints-empty">
+                <strong>
+                  No complaints found
+                </strong>
 
-              <span className="table-arrow">
-                <ArrowUpRight size={16} />
-              </span>
-            </button>
-          ))}
+                <span>
+                  Try changing your search or filters.
+                </span>
+              </div>
+            )}
+
+          {!loading &&
+            !error &&
+            filteredComplaints.map(
+              (complaint) => (
+                <button
+                  className="complaint-table-row"
+                  key={
+                    complaint.complaint_id ||
+                    complaint.id
+                  }
+                  onClick={() =>
+                    onOpenComplaint(complaint)
+                  }
+                >
+                  <div className="table-complaint">
+                    <div className="table-complaint-icon">
+                      <ArrowUpRight size={15} />
+                    </div>
+
+                    <div>
+                      <strong>
+                        {complaint.title ||
+                          "Untitled complaint"}
+                      </strong>
+
+                      <span>
+                        {complaint.complaint_id ||
+                          complaint.id ||
+                          "—"}
+                        {" · "}
+                        {complaint.citizen_name ||
+                          complaint.citizen?.name ||
+                          "Citizen"}
+                      </span>
+                    </div>
+                  </div>
+
+                  <span className="table-category">
+                    {complaint.category ||
+                      "Uncategorized"}
+                  </span>
+
+                  <span className="table-location">
+                    <MapPin size={13} />
+
+                    {getLocationText(
+                      complaint.location
+                    )}
+                  </span>
+
+                  <span
+                    className={`complaint-status ${getStatusClass(
+                      complaint.status
+                    )}`}
+                  >
+                    {formatStatus(
+                      complaint.status
+                    )}
+                  </span>
+
+                  <span className="table-date">
+                    {formatDate(
+                      complaint.created_at
+                    )}
+                  </span>
+
+                  <span className="table-arrow">
+                    <ArrowUpRight size={16} />
+                  </span>
+                </button>
+              )
+            )}
         </div>
       </div>
     </div>
